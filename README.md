@@ -4,7 +4,11 @@
 
 # Models 
 Multiple Linear Regression
+
 k-nearest neighbours 
+
 Bayesian Ridge
-Random forest 
+
+Random forest
+
 XGBoost
