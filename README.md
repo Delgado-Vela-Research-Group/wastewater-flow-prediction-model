@@ -12,3 +12,10 @@ Bayesian Ridge
 Random forest
 
 XGBoost
+
+# Requirement
+pycaret
+
+# References
+https://scikit-learn.org/stable/
+
