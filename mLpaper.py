@@ -430,9 +430,69 @@ for model_name, model in models:
 
     shap_values_list.append(shap_values)
     feature_names = train_alexRenew.columns.tolist()
+
 for idx, (model_name, shap_values) in enumerate(zip([model[0] for model in models], shap_values_list)):
     plt.figure()
     shap.summary_plot(shap_values, X_test_scaled, feature_names=feature_names, title=f'{model_name} Shapley Summary Plot')
     # Save the plot with a unique name (optional)
     plt.savefig(f'shap_summary_plot_{idx}.png', bbox_inches='tight',dpi=2000)
     plt.close('all')
+
+
+
+#########Fig S5#######################################
+dataPlantI = pd.read_csv('alexRenew_with_condition.csv')
+dataPlantII = pd.read_csv('houston_with_condition.csv')
+
+fig, axs = plt.subplots(1, 2, figsize=(10, 4)) 
+
+# Plot for Plant I
+sns.boxplot(x='condition',
+            y='flow',
+            color='lightgrey',
+            saturation=0.5,
+            showfliers=False,
+            data=dataPlantI,
+            ax=axs[0])
+
+sns.stripplot(x='condition',
+              y='flow',
+              data=dataPlantI,
+              color='black',
+              jitter=True,
+              size=1.5,
+              ax=axs[0])
+
+axs[0].grid(False)
+axs[0].tick_params(axis='y', which='both', left=True, right=False, direction='out')
+axs[0].tick_params(axis='x', which='both', bottom=True, top=False, direction='out')
+axs[0].set_xlabel('Influent Flow Condition')
+axs[0].set_ylabel('Flow (Million Gallons per Day)') 
+axs[0].set_title('Plant I')
+
+# Plot for Plant II
+sns.boxplot(x='condition',
+            y='flow',
+            color='lightgrey',
+            saturation=0.5,
+            showfliers=False,
+            data=dataPlantII,
+            ax=axs[1])
+
+sns.stripplot(x='condition',
+              y='flow',
+              data=dataPlantII,
+              color='black',
+              jitter=True,
+              size=1.5,
+              ax=axs[1])
+
+axs[1].grid(False)
+axs[1].tick_params(axis='y', which='both', left=True, right=False, direction='out')
+axs[1].tick_params(axis='x', which='both', bottom=True, top=False, direction='out')
+axs[1].set_xlabel('Influent Flow Condition')
+axs[1].set_ylabel('Flow (Million Gallons per Day)')
+axs[1].set_title('Plant II')
+plt.tight_layout()
+plt.savefig('flow during dry and wet conditions.png', dpi =1500)
+plt.show()
