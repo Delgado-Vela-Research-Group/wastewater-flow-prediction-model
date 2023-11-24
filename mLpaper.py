@@ -1,11 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Nov  6 17:11:16 2023
+Created on Mon Oct  15 17:11:16 2023
 
-@author: user
+@author: Isaac Musaazi @Duke University
+
 """
+#################libraries that need to be installed or loaded before completing the analysis in the manuscript#############
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import TimeSeriesSplit
+import smogn  ##synthetic minority over-sampling for regression
+from sklearn.model_selection import GridSearchCV
+import xgboost as xgb
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
+import shap
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.linear_model import BayesianRidge, LinearRegression
+from scipy.stats import norm, lognorm, expon, uniform
+import statsmodels.api as sm
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
+import warnings
+warnings.filterwarnings("ignore")
+################################################################################################
 
 data = pd.read_csv('your_data_file.csv')  # assume that data for developing a prediction model is from a CSV file
 data['date'] = pd.to_datetime(data['date']) # time series data requires to convert the date column to datetime
@@ -13,33 +34,28 @@ data.set_index('date', inplace=True)
 data = pd.get_dummies(data, prefix=None, drop_first=True) #drop one of the dummy variables. season of the year was the categorial variable
 
 #Time based train-test split################
-test_data = 290    #split the data to preserve the temporal order. Testing data comes from later time periods. For Plant I, 290 data points were considered in the testing set
+test_data = 290    #split the data to preserve the temporal order. Testing data comes from later time periods. For example, for Plant I, 290 data points were considered in the testing set
 train_data = data[:-test_data] #training data comes from the earlier time periods
 test_data = data[-test_data:]
-
 train_labels = train_data['flow'] # extract labels -  in this study 'flow'
 test_labels = test_data['flow']
 
-
-###some data preprocessing and handling censored values for training set###
+###some data preprocessing and handling censored values for training set#############
 train_data['censoring'] = train_data['variable'].apply(lambda x: 0 if '<' not in x and '>' not in x else (1 if '<' in x else 2))
 train_data['variable'] = train_data['variable'].str.replace('[<>]', '', regex=True).astype(float) #variable was NOx for Plant I
 ### mean and standard deviation values obtained from R using the enorm censored package 
-mean_value = 0.03
-std_value = 0.01
+mean = 0.0 ##place holder for the calculated mean value 
+std = 0.1 ###place holder for the calculated standard deviation value
 
 censored_positions = (train_data.censoring == 1) # determine censored value positions
 num_censored = censored_positions.sum() # calculate the number of censored values that are needed
-random_values = np.random.normal(mean_value, std_value, num_censored) # generate those random values to replace the censored numbers. Assume these random values come from a normal distribution
+random_values = np.random.normal(mean, std, num_censored) # generate those random values to replace the censored numbers. Assume these random values come from a normal distribution
 
 ###creating additional features from rainfall data to provide more information to the prediciton models and potentially improve predictive performance. 
-#here the  count resets when the rainfall exceeds 0.04, and it increments for each day without significant rainfall
-##This should result in a continuous progression of antecedent dry day (ADD)
+#here the  count resets when the rainfall exceeds 0.04, and it increments for each day without significant rainfall. This should result in a continuous progression of antecedent dry day (ADD)
 #the "ADD" column is created in the training set. It counts the number of days before each rainfall event and resets the count when a rainfall event is observed. 
-
 count_rain = 0
 ADD = []
-
 for rainfall in train_data['rainfall']:  # Iterate through the 'rainfall' column
     if rainfall <= 0.04:
         count_rain += 1  # Increment the count for each day without significant rainfall
@@ -47,14 +63,10 @@ for rainfall in train_data['rainfall']:  # Iterate through the 'rainfall' column
         count_rain = 0  # Reset the count when rainfall exceeds 0.04
     ADD.append(count_rain)
 
-train_data['ADD'] = ADD ##we have an additional variable in the training set
-
-
+train_data['ADD'] = ADD ##we have an additional variable in the training set   
 ######handling missing data, particularly Plant II the imputation on train and test set is separate#####################
 cols = ['feature_1', 'feature_2', 'feature_3', 'feature_4', 'target', 'ADD', 'season_1', 'season_2', 'season_3'] # define columns to be used for imputation
-
 imputation = IterativeImputer(estimator=KNeighborsRegressor(), max_iter=1000, tol=1e-1) # Create an IterativeImputer
-
 for data in [train_data]:
     # Extract the columns from the data for imputation and perform imputation and update the train data
     X = data[cols] 
@@ -62,7 +74,6 @@ for data in [train_data]:
     imputed_df = pd.DataFrame(imputed_values, columns=X.columns) # Create a DataFrame with the imputed values
     for col in cols:
         data[col] = imputed_df[col]
-
 for data in [test_data]:
     X = data[cols]
     imputed_values = imputation.fit_transform(X)
@@ -71,14 +82,12 @@ for data in [test_data]:
     for col in cols:
         data[col] = imputed_df[col]    
 
-
 ####combine the train and test sets and perform some preliminary analysis#####
 ###here the correlation coefficients using spearman are completed########
-###Table SX and Table SXX########
+###Tables S2 and Table S3########
 combined_data = pd.concat([train_data, test_data], axis=0)
 spear_corr = combined_data.corr(method='spearman', min_periods=2)
 correlation_matrix, p_values = scipy.stats.spearmanr(a=combined_data, b=None, axis=0)
-
 coefficients_matrix = pd.DataFrame(correlation_matrix)
 p_values = pd.DataFrame(p_values)
 
@@ -86,19 +95,17 @@ p_values = pd.DataFrame(p_values)
 ## streamline process for model selection and evaluation using pyCaret### 
 ##remember to install this package on your local machine#########
 #################################
-##check perfomrmance of different regression models based on training time and OAI. OAI is computed separately based on R2, RMSE, MAE (see Equation 1 in the paper)
-model_selection = setup(data =combined_data , target = 'flow',preprocess=False,session_id = 123, normalize= True) #no preprocessing is required
+##check performance of different regression models based on training time and OAI. OAI is computed separately based on R2, RMSE, MAE (see Equation 1 in the paper)
+model_selection = setup(data = train_data, test_data = test_data, target = 'flow', fold_strategy = 'timeseries',data_split_shuffle=False, fold_shuffle=False, fold = 5, transform_target = False, session_id = 123) ###no preprocessing is required
 best_models = compare_models()
 model_results = pull()   ####ranks best to worst model based on the R2
 
-
 ###SMOGN algorithm is used to handle the skewed distribution of the target variable ('flow') 
-##want to improve the ability of the modelsto predict rare cases effectively
+##want to improve the ability of the models to predict rare cases effectively
 num = 50 ###create 50 synthetic datasets and select the best set based on the lowest mse value and the lowest zero count for the dummy variables
 best_mse = float('inf')  # initialize to a high value
 synthetic_set = None
-columns = ['seasonSpring', 'seasonSummer', 'seasonWinter']
-
+columns = ['Spring', 'Summer', 'Winter']
 for i in range(num):
     k_values = range(1, 3)  #k-values specifies the number of neighbors to consider for interpolation used in over-sampling
     pertubs =np.linspace(0.1, 1, 20)  #the amount of perturbation to apply to the introduction of Gaussian Noise.
@@ -128,7 +135,6 @@ for i in range(num):
     # Split data into training and test sets
         XTrain, XTest, yTrain, yTest = train_test_split(X, y, train_size=0.7, test_size=0.3, shuffle=False, stratify=None)
 
-
         yTestActual = yTest.values         # calculate MSE for the test set
         yTestSynthetic = data_train.loc[XTest.index, 'flow'].values
         if yTestActual.shape != yTestSynthetic.shape:
@@ -150,7 +156,6 @@ if synthetic_sets:
         data.drop(columns=columns, inplace=True)
 
     remove_zeros(best_synthetic_data)  
-
 
 ########model development using train and test data#####################
 ###use the train set without resampling and the train set with synthetic data separately####
@@ -187,10 +192,12 @@ scaler = StandardScaler()  #use standard scaler for the data
 X_train_scaled = scaler.fit_transform(train_data)
 X_test_scaled = scaler.transform(test_data)
 
+cv = TimeSeriesSplit(n_splits=5)
+
 for model_name, model, param_grid in models:
 
     grid_search = GridSearchCV(estimator=model, param_grid=param_grid,
-                               scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+                               scoring='neg_mean_squared_error', cv=cv, n_jobs=-1)
 
     grid_search.fit(X_train_scaled, train_labels)
     best_params = grid_search_resampled.best_params_
@@ -216,7 +223,7 @@ for model_name, model, param_grid in models:
     results[model_name, 'R2'] = r2_resampled
 
 
-########figure SX################################
+########Figure S3################################
 def cum_plot(data):
     '''plot the cumulative distribution function to determine the flow rate that constitutes
     a rare events. The 99th percentile is used as the cutoff'''
@@ -233,14 +240,13 @@ def cum_plot(data):
     plt.axhline(y = 0.99, color='k', linestyle='dashed',label = '99th percentile')
     plt.axvline(x=(np.percentile(combined_data['flow'],99)), color='r', linestyle='dashdot', label = 'Influent Flow Threshold')
     plt.legend()
-    return plt.savefig('figure SXx.png', dpi = 1200)
+    return plt.savefig('Figure S3.png', dpi = 1200)
 
 
-#########Figure SX############################
+#########Figure 6############################
 model = 'XGBoost'  # Replace with your specific model
 def y_formatter(y, pos):
   return abs(y)  # Custom y-axis label formatter to remove the negative sign
-
 fig, (ax1,ax2) = plt.subplots(1,2, figsize=(10, 5))
 ax1.plot('date', 'flow', label='measured flow', linestyle='solid', data=predictions_resampled, color='black')
 ax1.plot('date', model, ls='solid', label=f'baseline flow', data=predictions, color='orange')
@@ -279,11 +285,8 @@ ax2.tick_params(axis='x', labelsize=10, rotation=45)
 ax2.legend(prop={"size": 8},loc='center left',bbox_to_anchor=(0.2, 0.5),frameon=False)
 ax2.set_title('Plant II', fontsize=12)
 
-# Create a shared secondary y-axis for the bar plot
-ax2_2= ax2.twinx()
-
-# Bar plot on the secondary y-axis without the negative sign
-ax2_2.bar(predictions_houston['date'], -predictions_houston['rainfall'], color='tab:blue', alpha=0.8, label='rainfall')
+ax2_2= ax2.twinx()  # Create a shared secondary y-axis for the bar plot
+ax2_2.bar(predictions_houston['date'], -predictions_houston['rainfall'], color='tab:blue', alpha=0.8, label='rainfall') # Bar plot on the secondary y-axis without the negative sign
 ax2_2.legend(prop={"size": 8},loc='center left',bbox_to_anchor=(0.2, 0.4),frameon=False)
 ax2_2.set_ylabel('Rainfall')
 ax2_2.yaxis.set_major_formatter(FuncFormatter(y_formatter))
@@ -293,9 +296,7 @@ ax2_2.set_ylim(rainfall_max * 2.5, 0)
 ax2.set_ylim(0.5, flow_max * 2)
 plt.savefig('Fig XX.png',dpi=1200)
 
-
-
-#########Figure 2 ###############################
+#########Figure 3 ###############################
 model_colors = {
     'linearReg': 'orange',
     'kNearest': 'blue',
@@ -406,16 +407,16 @@ for col in col2:
     ax_zoom2.plot(x, slope * x + intercept, label=f"{col}",linestyle='-', linewidth=3,c=color)
     ax_zoom2.plot([50, 80], [50, 80], linestyle='--', color='black', label='1:1 Line')
 #plt.show()
-plt.savefig('FigX.png',bbox_inches='tight',dpi=2000)
+plt.savefig('Figure .png',bbox_inches='tight',dpi=2000)
 
-#########these model hyperparameters are obtained from the grid search. These should be different for the baseline and resampled training data#########
+#########these model hyperparameters are obtained from grid search. These should be different for the baseline and resampled training data#########
 #best_knn_model = KNeighborsRegressor(metric=manhattan, n_neighbors=10, weights=distance)
 best_random_forest_model = RandomForestRegressor(max_depth=4, n_estimators=10)
 best_bayesian_ridge_model = BayesianRidge(alpha_1=100, alpha_2=0.001, n_iter= 10, tol= 0.001)
 best_xgboost_model = xgb.XGBRegressor(learning_rate=0.2, max_depth=4, n_estimators=100)
 
 
-#################Figure XX #########################3
+#################Figure 7 #########################3
 models = [
     ('Random Forest', best_random_forest_model),
     ('Bayesian Ridge', best_bayesian_ridge_model),
@@ -437,9 +438,7 @@ for idx, (model_name, shap_values) in enumerate(zip([model[0] for model in model
     # Save the plot with a unique name (optional)
     plt.savefig(f'shap_summary_plot_{idx}.png', bbox_inches='tight',dpi=2000)
     plt.close('all')
-
-
-
+    
 #########Fig S5#######################################
 dataPlantI = pd.read_csv('alexRenew_with_condition.csv')
 dataPlantII = pd.read_csv('houston_with_condition.csv')
